@@ -1,3 +1,5 @@
+{-# LANGUAGE ExistentialQuantification #-}
+
 module Main where
 
 import Termin
@@ -8,14 +10,19 @@ main :: IO()
 main = startGame action newWorld 
 
 newWorld :: World
-newWorld = World (newSnake (Crd 6 4) 14) (Title "" $ Crd 0 0)
+newWorld = World (newSnake (Crd 6 4) 14) False []
 
 newSnake :: Crd -> Int -> Snake
-newSnake start@(Crd x y) len = Snake $ reverse [Crd xi y | xi <- [x..x+len] ]
+newSnake (Crd x y) len = Snake $ reverse [Crd xi y | xi <- [x..x+len] ]
+
+emptyTitle :: Title
+emptyTitle = Title "" $ Crd 0 0
 
 action :: World -> Char -> (Int,Int) -> World
-action (World (Snake s) (Title t_str t_crd)) ch (w, h) = World (Snake $ move (head s) dir 1 : init s) (Title "" t_crd)  
-    where dir = fromMaybe prevDir $ fmap (\d -> if (isOpposite d prevDir) then prevDir else d) (getDir ch)
+action world@(World (Snake s) dead rndr) ch (w, h) | dead = world
+                                                   | otherwise = if (isDead nextSnake) then (World nextSnake True [youDied (w, h)]) else World nextSnake False []
+    where nextSnake = Snake $ move (head s) dir 1 : init s  
+          dir = fromMaybe prevDir $ fmap (\d -> if (isOpposite d prevDir) then prevDir else d) (getDir ch)
           prevDir = getPrevDir s         
 
 getDir :: Char -> Maybe Dir
@@ -36,7 +43,7 @@ isDead :: Snake -> Bool
 isDead (Snake (s:ss)) = s `elem` ss
 
 youDied :: (Int, Int) -> Title
-youDied = center "You Died" 
+youDied = center "YOU DIED" 
 
 data Snake = Snake {body :: [Crd]}
     deriving (Eq, Show)
@@ -44,6 +51,10 @@ data Snake = Snake {body :: [Crd]}
 instance Renderable Snake where
     render (Snake s_body) = Point (head s_body) '▒' : map (\c -> Point c '█') (init.tail $ s_body) ++ [Point (last s_body) '█']
 
-data World = World {snake :: Snake, dbg :: Title}
+data World = World {snake :: Snake, dead :: Bool, msg :: [Title]}
 instance Renderable World where
-    render (World snake dbg) = render snake ++ render dbg
+    render (World snake dead msg) = concat $ map render (RS snake:(map RS msg)) --great type system, they said 
+
+data Renderables = forall a. Renderable a => RS a
+instance Renderable Renderables where
+    render (RS a) = render a

@@ -1,5 +1,4 @@
 module Termin (
-    Crd (..), Point (..), Renderable, render, 
     addToScreen, startGame, readAll 
 ) where
 
@@ -16,13 +15,8 @@ import Control.Concurrent
 import System.IO
 import Control.Concurrent
 import System.CPUTime
+import Geom
 
-
-data Crd = Crd {x :: Int, y :: Int} deriving (Eq, Show)
-data Point = Point {crd :: Crd, sym :: Char} deriving (Eq, Show)
-
-class Renderable a where 
-    render :: a -> [Point]
 
 addToScreen :: Renderable a => [String] -> (Int, Int) -> a -> [String]
 addToScreen ls size obj = map (\(i, l, ps) -> mergeLine l ps) $ groupByLines ls $ normalize (render obj) size 
@@ -66,7 +60,7 @@ gameLoop h wnd world action = do
                         ch <- readAll h ' '
                         when (ch /= 'q') $ gameLoop h wnd (action world ch (width, height)) action 
                                 where fps      = 15
-                                      height   = T.height wnd - 1
+                                      height   = T.height wnd - 2
                                       width    = T.width wnd
 
 --read all input from Handle, return only the last char or default

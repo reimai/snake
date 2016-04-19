@@ -1,14 +1,21 @@
 module Geom (
-Title(..), Dir(..), move, center, isOpposite, isX, isY
+Title(..), Dir(..), Crd(..), Point(..), 
+Renderable, render,
+move, center, isOpposite, isX, isY
 ) where
 
-import Termin
 
 move :: Crd -> Dir -> Int -> Crd
 move (Crd x y) RightD n = Crd (x+n) y 
 move (Crd x y) LeftD n = Crd (x-n) y  
 move (Crd x y) UpD n = Crd x (y-n)  
 move (Crd x y) DownD n = Crd x (y+n)
+
+data Crd = Crd {x :: Int, y :: Int} deriving (Eq, Show)
+data Point = Point {crd :: Crd, sym :: Char} deriving (Eq, Show)
+
+class Renderable a where  
+    render :: a -> [Point] 
 
 data Title = Title {str :: String, pos :: Crd}
     deriving (Eq, Show)
