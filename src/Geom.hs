@@ -12,7 +12,10 @@ move (Crd x y) UpD n = Crd x (y-n)
 move (Crd x y) DownD n = Crd x (y+n)
 
 data Crd = Crd {x :: Int, y :: Int} deriving (Eq, Show)
+
 data Point = Point {crd :: Crd, sym :: Char} deriving (Eq, Show)
+instance Renderable Point where
+    render p = [p]
 
 class Renderable a where  
     render :: a -> [Point] 
