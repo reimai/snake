@@ -6,10 +6,10 @@ move, center, isOpposite, isX, isY
 
 
 move :: Crd -> Dir -> Int -> Crd
-move (Crd x y) RightD n = Crd (x+n) y 
-move (Crd x y) LeftD n = Crd (x-n) y  
-move (Crd x y) UpD n = Crd x (y-n)  
-move (Crd x y) DownD n = Crd x (y+n)
+move (Crd x y) dir n | isX dir   = Crd (x+nSign) y
+                     | otherwise = Crd x (y+nSign)
+    where nSign | isPositive dir = n
+                | otherwise = -n
 
 data Crd = Crd {x :: Int, y :: Int} deriving (Eq, Show)
 
@@ -42,3 +42,8 @@ isX _ = False
 
 isY :: Dir -> Bool
 isY = not.isX
+
+isPositive :: Dir -> Bool
+isPositive RightD = True
+isPositive DownD = True
+isPositive _ = False

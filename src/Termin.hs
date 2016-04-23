@@ -1,6 +1,6 @@
 --module for supid & simple console games
 module Termin (
-    addToScreen, readAll, startGame, normalize, GameState(..) 
+    addToScreen, readAll, startGame, normalize, GameState(..), GameAux(..)
 ) where
 
 import Data.List
@@ -19,10 +19,11 @@ import System.CPUTime
 import Geom
 import System.Random
 
-data GameState = GameState{wnd :: (Int, Int), rnd :: StdGen}
+data Renderable a => GameState a = GameState{aux :: GameAux, world :: a}
 
+data GameAux = GameAux{wnd :: (Int, Int), rnd :: StdGen}
 
-startGame :: Renderable a => (a -> Char -> GameState -> (a, GameState)) -> (GameState -> (a, GameState)) -> IO()
+startGame :: Renderable a => (GameState a -> Char -> GameState a) -> (GameAux -> GameState a) -> IO()
 startGame action initWorld = do
         hSetBuffering stdin NoBuffering --get input immedietly
         hSetEcho stdin False            --don't show the typed character
@@ -31,20 +32,16 @@ startGame action initWorld = do
         rnd <- getStdGen
         let w = T.width wnd
         let h = T.height wnd - 1
-        let (initRnd, mainRnd) = split rnd
-        let game = GameState (w, h) mainRnd
-        let world = fst $ initWorld $ GameState (w, h) initRnd
-        gameLoop stdin game world action
+        gameLoop stdin (initWorld $ GameAux (w, h) rnd) action
 
 
 --main loop, read input, change the world, redraw screen 
-gameLoop :: Renderable a => Handle -> GameState -> a -> (a -> Char -> GameState -> (a, GameState)) -> IO()
-gameLoop input game@(GameState (w, h) rnd) world action = do
+gameLoop :: Renderable a => Handle -> GameState a -> (GameState a -> Char -> GameState a) -> IO()
+gameLoop input game@(GameState (GameAux (w, h) rnd) world) action = do
                         mapM_ putStrLn $ addToScreen (replicate h $ replicate w ' ') (w,h) world 
                         e <- threadDelay (floor(1/fps * 10^6))  
                         ch <- readAll input ' '
-                        let (newWorld, newGame) = action world ch game
-                        when (ch /= 'q') $ gameLoop input newGame newWorld action
+                        when (ch /= 'q') $ gameLoop input (action game ch) action
                             where fps = 15
 
 

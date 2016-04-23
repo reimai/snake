@@ -11,12 +11,12 @@ import qualified System.Random as R
 main :: IO()
 main = startGame action newWorld 
 
-newWorld :: GameState -> (World, GameState)
-newWorld game = (World (newSnake (Crd 6 4) 6) [] 0 treats, newGame)
-    where (treats, newGame) = genTreats game 1
+newWorld :: GameAux -> GameState World
+newWorld aux = GameState newAux $ World (newSnake (Crd 6 4) 6) [] 0 treats
+    where (treats, newAux) = genTreats aux 1
 
-genTreats :: GameState -> Int -> ([Treat], GameState)
-genTreats (GameState wnd@(w,h) rnd) n = (treats, GameState wnd newRnd)
+genTreats :: GameAux -> Int -> ([Treat], GameAux)
+genTreats (GameAux wnd@(w,h) rnd) n = (treats, GameAux wnd newRnd)
     where treats = take n $ map (uncurry (meatball wnd)) $ zip (R.randomRs (0, w) rndX) (R.randomRs (0,h) rndY)
           (rndX, rndY) = R.split crdRnd
           (crdRnd, newRnd) = R.split rnd
@@ -27,26 +27,28 @@ newSnake (Crd x y) len = Snake (reverse [Crd xi y | xi <- [x..x+len]]) False Rig
 meatball :: (Int, Int) -> Int -> Int -> Treat
 meatball wnd x y = Treat (Point (Crd x y) '*') $ treats_life wnd
 
-action :: World -> Char -> GameState -> (World, GameState)
-action world@(World snake@(Snake s dead prevDir) msg score treats) ch game | dead = (world, game)
-                                                                           | otherwise = (World nextSnake messages newScore nextTreats, newGame)
-    where messages = [debug snake, showScore newScore] ++ (if (isDead nextSnake) then [youDied (wnd game)] else [])
+action :: GameState World -> Char -> GameState World
+action game@(GameState aux world@(World snake@(Snake s dead prevDir) msg score treats)) ch | dead = game
+                                                                                           | otherwise = GameState newAux newWorld
+    where newWorld = World nextSnake messages newScore newTreats
+          messages = [debug snake, showScore newScore] ++ (if (isDead nextSnake) then [youDied (wnd aux)] else [])
           newScore = score + gotScore
-          (nextSnake, nextTreats, gotScore, newGame) = next snake game (getDir ch) treats
+          (nextSnake, newTreats, gotScore, newAux) = next snake aux (getDir ch) treats
 
-next :: Snake -> GameState -> Maybe Dir -> [Treat] -> (Snake, [Treat], Int, GameState)
-next (Snake body@(s:ss) dead prevDir) game@(GameState wnd rnd) maybeDir ts = (checkDead $ newSnake, newTreats, gotScore, newGame)
+next :: Snake -> GameAux -> Maybe Dir -> [Treat] -> (Snake, [Treat], Int, GameAux)
+next (Snake body@(s:ss) dead prevDir) aux@(GameAux wnd rnd) maybeDir ts = (checkDead $ newSnake, newTreats, gotScore, newAux)
     where newSnake = Snake (newHead : (if (isJust ate) then body else init body)) dead dir
           dir = fromMaybe prevDir $ fmap (\d -> if (isOpposite d prevDir) then prevDir else d) maybeDir
           gotScore = fromMaybe 0 $ fmap (\i -> life $ ts !! i) ate
           ate = elemIndex newHead (map (crd.p) ts)
           newHead = normalize wnd $ move s dir 1
-          (extraTreats, newGame) = getExtraTreats game
+          (extraTreats, newAux) = getExtraTreats aux
           newTreats = extraTreats ++ (catMaybes $ map getOlder $ fromMaybe ts $ fmap (\i -> deleteByIndex i ts) ate)
 
-getExtraTreats :: GameState -> ([Treat], GameState)
-getExtraTreats (GameState wnd@(w,h) rnd) = (treats, newGame)
-    where (treats, newGame) = if (dice == 1) then genTreats (GameState wnd crdRnd) 1 else ([], GameState wnd crdRnd)
+getExtraTreats :: GameAux -> ([Treat], GameAux)
+getExtraTreats (GameAux wnd@(w,h) rnd) = (treats, newAux)
+    where (treats, newAux) = if (dice == 1) then genTreats crdAux 1 else ([], crdAux)
+          crdAux = GameAux wnd crdRnd
           (dice, crdRnd) = R.randomR (0, treats_life wnd `div` 2) rnd
 
 getOlder :: Treat -> Maybe Treat
@@ -76,7 +78,7 @@ checkDead (Snake (s:ss) dead prevDir) = Snake (s:ss) (dead || died) prevDir
     where died = s `elem` ss
 
 youDied :: (Int, Int) -> Title
-youDied = center "YOU DIED" 
+youDied = center "YOU DIED"
 
 data Snake = Snake {body :: [Crd], isDead :: Bool, prevDir :: Dir}
     deriving (Eq, Show)
