@@ -1,3 +1,4 @@
+--module for supid & simple console games
 module Termin (
     addToScreen, readAll, startGame, normalize, GameState(..) 
 ) where
@@ -21,8 +22,8 @@ import System.Random
 data GameState = GameState{wnd :: (Int, Int), rnd :: StdGen}
 
 
-startGame :: Renderable a => (a -> Char -> GameState -> a) -> (GameState -> a) -> IO()                      
-startGame action init_world = do
+startGame :: Renderable a => (a -> Char -> GameState -> (a, GameState)) -> (GameState -> (a, GameState)) -> IO()
+startGame action initWorld = do
         hSetBuffering stdin NoBuffering --get input immedietly
         hSetEcho stdin False            --don't show the typed character
         jwindow <- T.size
@@ -30,20 +31,21 @@ startGame action init_world = do
         rnd <- getStdGen
         let w = T.width wnd
         let h = T.height wnd - 1
-        let (init_rnd, main_rnd) = split rnd
-        let game = GameState (w, h) main_rnd
-        let world = init_world $ GameState (w, h) init_rnd 
+        let (initRnd, mainRnd) = split rnd
+        let game = GameState (w, h) mainRnd
+        let world = fst $ initWorld $ GameState (w, h) initRnd
         gameLoop stdin game world action
 
 
 --main loop, read input, change the world, redraw screen 
-gameLoop :: Renderable a => Handle -> GameState -> a -> (a -> Char -> GameState -> a) -> IO()
-gameLoop input game@(GameState (w, h) rnd) world action = do 
+gameLoop :: Renderable a => Handle -> GameState -> a -> (a -> Char -> GameState -> (a, GameState)) -> IO()
+gameLoop input game@(GameState (w, h) rnd) world action = do
                         mapM_ putStrLn $ addToScreen (replicate h $ replicate w ' ') (w,h) world 
                         e <- threadDelay (floor(1/fps * 10^6))  
                         ch <- readAll input ' '
-                        when (ch /= 'q') $ gameLoop input game (action world ch game) action 
-                                where fps = 15
+                        let (newWorld, newGame) = action world ch game
+                        when (ch /= 'q') $ gameLoop input newGame newWorld action
+                            where fps = 15
 
 
 addToScreen :: Renderable a => [String] -> (Int, Int) -> a -> [String]

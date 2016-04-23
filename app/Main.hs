@@ -11,36 +11,54 @@ import qualified System.Random as R
 main :: IO()
 main = startGame action newWorld 
 
-newWorld :: GameState -> World
-newWorld game = World (newSnake (Crd 6 4) 16) [] $ genTreats game 30 
+newWorld :: GameState -> (World, GameState)
+newWorld game = (World (newSnake (Crd 6 4) 6) [] 0 treats, newGame)
+    where (treats, newGame) = genTreats game 1
 
-genTreats :: GameState -> Int -> [Treat]
-genTreats (GameState (w,h) rnd) n = take n $ map (uncurry meatball) $ zip (R.randomRs (0, w) rnd_x) (R.randomRs (0,h) rnd_y)
-    where (rnd_x, rnd_y) = R.split rnd
+genTreats :: GameState -> Int -> ([Treat], GameState)
+genTreats (GameState wnd@(w,h) rnd) n = (treats, GameState wnd newRnd)
+    where treats = take n $ map (uncurry (meatball wnd)) $ zip (R.randomRs (0, w) rndX) (R.randomRs (0,h) rndY)
+          (rndX, rndY) = R.split crdRnd
+          (crdRnd, newRnd) = R.split rnd
 
 newSnake :: Crd -> Int -> Snake
 newSnake (Crd x y) len = Snake (reverse [Crd xi y | xi <- [x..x+len]]) False RightD
 
-meatball :: Int -> Int -> Treat
-meatball x y = Point (Crd x y) '*' 
+meatball :: (Int, Int) -> Int -> Int -> Treat
+meatball wnd x y = Treat (Point (Crd x y) '*') $ treats_life wnd
 
-action :: World -> Char -> GameState -> World
-action world@(World snake@(Snake s dead prevDir) msg treats) ch game | dead = world
-                                                                     | otherwise = if (isDead nextSnake) 
-                                                                           then (World nextSnake [youDied (wnd game), debug snake] nextTreats) 
-                                                                           else World nextSnake [debug snake] nextTreats
-    where (nextSnake, nextTreats) = next snake game (getDir ch) treats   
+action :: World -> Char -> GameState -> (World, GameState)
+action world@(World snake@(Snake s dead prevDir) msg score treats) ch game | dead = (world, game)
+                                                                           | otherwise = (World nextSnake messages newScore nextTreats, newGame)
+    where messages = [debug snake, showScore newScore] ++ (if (isDead nextSnake) then [youDied (wnd game)] else [])
+          newScore = score + gotScore
+          (nextSnake, nextTreats, gotScore, newGame) = next snake game (getDir ch) treats
 
-next :: Snake -> GameState -> Maybe Dir -> [Treat] -> (Snake, [Treat]) 
-next (Snake body@(s:ss) dead prevDir) (GameState wnd rnd) m_dir ts = (checkDead $ newSnake, fromMaybe ts $ fmap (\i -> deleteByIndex i ts) ate)
+next :: Snake -> GameState -> Maybe Dir -> [Treat] -> (Snake, [Treat], Int, GameState)
+next (Snake body@(s:ss) dead prevDir) game@(GameState wnd rnd) maybeDir ts = (checkDead $ newSnake, newTreats, gotScore, newGame)
     where newSnake = Snake (newHead : (if (isJust ate) then body else init body)) dead dir
-          dir = fromMaybe prevDir $ fmap (\d -> if (isOpposite d prevDir) then prevDir else d) m_dir 
-          ate = elemIndex newHead (map crd ts)
-          newHead = normalize wnd $ move s dir 1  
-          
+          dir = fromMaybe prevDir $ fmap (\d -> if (isOpposite d prevDir) then prevDir else d) maybeDir
+          gotScore = fromMaybe 0 $ fmap (\i -> life $ ts !! i) ate
+          ate = elemIndex newHead (map (crd.p) ts)
+          newHead = normalize wnd $ move s dir 1
+          (extraTreats, newGame) = getExtraTreats game
+          newTreats = extraTreats ++ (catMaybes $ map getOlder $ fromMaybe ts $ fmap (\i -> deleteByIndex i ts) ate)
+
+getExtraTreats :: GameState -> ([Treat], GameState)
+getExtraTreats (GameState wnd@(w,h) rnd) = (treats, newGame)
+    where (treats, newGame) = if (dice == 1) then genTreats (GameState wnd crdRnd) 1 else ([], GameState wnd crdRnd)
+          (dice, crdRnd) = R.randomR (0, treats_life wnd `div` 2) rnd
+
+getOlder :: Treat -> Maybe Treat
+getOlder (Treat p life) | life == 1 = Nothing
+                        | otherwise = Just $ Treat p $ life-1
+
 deleteByIndex :: Int -> [a] -> [a]
 deleteByIndex i xs = fst splitted ++ (tail $ snd splitted) 
     where splitted = splitAt i xs
+
+showScore :: Int -> Title
+showScore score = Title ("Score: " ++ (show score)) $ Crd 0 0
 
 debug :: Show a => a -> Title
 --debug obj = Title (show obj) $ Crd 1 1
@@ -62,16 +80,20 @@ youDied = center "YOU DIED"
 
 data Snake = Snake {body :: [Crd], isDead :: Bool, prevDir :: Dir}
     deriving (Eq, Show)
-
-type Treat = Point
-
 instance Renderable Snake where
-    render (Snake s_body dead _) = Point (head s_body) head_sym : map (\c -> Point c '█') (init.tail $ s_body) ++ [Point (last s_body) '█']
-        where head_sym = if dead then 'X' else '▒'
+    render (Snake sBody dead _) = Point (head sBody) headSym : map (\c -> Point c '█') (init.tail $ sBody) ++ [Point (last sBody) '█']
+        where headSym = if dead then 'X' else '▒'
 
-data World = World {snake :: Snake, msg :: [Title], treats :: [Treat]}
+treats_life :: (Int, Int) -> Int
+treats_life (w, h) = w `div` 2 + h `div` 2 + 3
+
+data Treat = Treat {p :: Point, life :: Int}
+instance Renderable Treat where
+    render (Treat p life) = render p
+
+data World = World {snake :: Snake, msg :: [Title], score :: Int, treats :: [Treat]}
 instance Renderable World where
-    render (World snake msg treats) = concat $ map render (RS snake:(map RS treats) ++ (map RS msg)) --great type system, they said 
+    render (World snake msg score treats) = concat $ map render (RS snake:(map RS treats) ++ (map RS msg)) --great type system, they said
 
 data Renderables = forall a. Renderable a => RS a
 instance Renderable Renderables where
