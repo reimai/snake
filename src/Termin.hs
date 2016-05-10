@@ -1,6 +1,6 @@
 --module for supid & simple console games
 module Termin (
-    addToScreen, readAll, startGame, normalize, GameState(..), GameAux(..)
+    addToScreen, readAll, startGame, normalize, Game(..), GameAux(..), AuxState, getCrd
 ) where
 
 import Data.List
@@ -18,12 +18,28 @@ import Control.Concurrent
 import System.CPUTime
 import Geom
 import System.Random
+import Control.Monad.Trans.State
 
-data Renderable a => GameState a = GameState{aux :: GameAux, world :: a}
+data Renderable a => Game a = Game{aux :: GameAux, world :: a}
 
 data GameAux = GameAux{wnd :: (Int, Int), rnd :: StdGen}
 
-startGame :: Renderable a => (GameState a -> Char -> GameState a) -> (GameAux -> GameState a) -> IO()
+type AuxState a = State GameAux a
+
+getX :: AuxState Int
+getX = getOneCrd fst
+
+getY :: AuxState Int
+getY = getOneCrd snd
+
+getOneCrd :: ((Int,Int) -> Int) -> AuxState Int
+getOneCrd chooseCrd = state (\(GameAux wnd rnd) -> (\(i, rnd') -> (i, GameAux wnd rnd')) $ randomR (0, (chooseCrd wnd)) rnd)
+
+getCrd :: AuxState Crd
+getCrd = getX >>= \x -> getY >>= \y -> return $ Crd x y
+
+
+startGame :: Renderable a => (Game a -> Char -> Game a) -> (GameAux -> Game a) -> IO()
 startGame action initWorld = do
         hSetBuffering stdin NoBuffering --get input immedietly
         hSetEcho stdin False            --don't show the typed character
@@ -36,8 +52,8 @@ startGame action initWorld = do
 
 
 --main loop, read input, change the world, redraw screen 
-gameLoop :: Renderable a => Handle -> GameState a -> (GameState a -> Char -> GameState a) -> IO()
-gameLoop input game@(GameState (GameAux (w, h) rnd) world) action = do
+gameLoop :: Renderable a => Handle -> Game a -> (Game a -> Char -> Game a) -> IO()
+gameLoop input game@(Game (GameAux (w, h) rnd) world) action = do
                         mapM_ putStrLn $ addToScreen (replicate h $ replicate w ' ') (w,h) world 
                         e <- threadDelay (floor(1/fps * 10^6))  
                         ch <- readAll input ' '

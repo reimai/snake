@@ -6,50 +6,36 @@ import Termin
 import Geom
 import Data.Maybe
 import Data.List
-import qualified System.Random as R 
+import Control.Monad.Trans.State
+import System.Random
 
 main :: IO()
 main = startGame action newWorld 
 
-newWorld :: GameAux -> GameState World
-newWorld aux = GameState newAux $ World (newSnake (Crd 6 4) 6) [] 0 treats
-    where (treats, newAux) = genTreats aux 1
-
-genTreats :: GameAux -> Int -> ([Treat], GameAux)
-genTreats (GameAux wnd@(w,h) rnd) n = (treats, GameAux wnd newRnd)
-    where treats = take n $ map (uncurry (meatball wnd)) $ zip (R.randomRs (0, w) rndX) (R.randomRs (0,h) rndY)
-          (rndX, rndY) = R.split crdRnd
-          (crdRnd, newRnd) = R.split rnd
+newWorld :: GameAux -> Game World
+newWorld aux = Game newAux $ World (newSnake (Crd 6 4) 6) [] 0 treats
+    where (treats, newAux) = runState getTreats aux
 
 newSnake :: Crd -> Int -> Snake
 newSnake (Crd x y) len = Snake (reverse [Crd xi y | xi <- [x..x+len]]) False RightD
 
-meatball :: (Int, Int) -> Int -> Int -> Treat
-meatball wnd x y = Treat (Point (Crd x y) '*') $ treats_life wnd
-
-action :: GameState World -> Char -> GameState World
-action game@(GameState aux world@(World snake@(Snake s dead prevDir) msg score treats)) ch | dead = game
-                                                                                           | otherwise = GameState newAux newWorld
+action :: Game World -> Char -> Game World
+action game@(Game aux world@(World snake@(Snake s dead prevDir) msg score treats)) ch | dead = game
+                                                                                           | otherwise = Game newAux newWorld
     where newWorld = World nextSnake messages newScore newTreats
           messages = [debug snake, showScore newScore] ++ (if (isDead nextSnake) then [youDied (wnd aux)] else [])
           newScore = score + gotScore
-          (nextSnake, newTreats, gotScore, newAux) = next snake aux (getDir ch) treats
+          (nextSnake, newTreats, gotScore, newAux) = moveSnake snake aux (getDir ch) treats
 
-next :: Snake -> GameAux -> Maybe Dir -> [Treat] -> (Snake, [Treat], Int, GameAux)
-next (Snake body@(s:ss) dead prevDir) aux@(GameAux wnd rnd) maybeDir ts = (checkDead $ newSnake, newTreats, gotScore, newAux)
+moveSnake :: Snake -> GameAux -> Maybe Dir -> [Treat] -> (Snake, [Treat], Int, GameAux)
+moveSnake (Snake body@(s:ss) dead prevDir) aux@(GameAux wnd rnd) maybeDir ts = (checkDead $ newSnake, newTreats, gotScore, newAux)
     where newSnake = Snake (newHead : (if (isJust ate) then body else init body)) dead dir
           dir = fromMaybe prevDir $ fmap (\d -> if (isOpposite d prevDir) then prevDir else d) maybeDir
           gotScore = fromMaybe 0 $ fmap (\i -> life $ ts !! i) ate
           ate = elemIndex newHead (map (crd.p) ts)
           newHead = normalize wnd $ move s dir 1
-          (extraTreats, newAux) = getExtraTreats aux
+          (extraTreats, newAux) = runState getTreats aux
           newTreats = extraTreats ++ (catMaybes $ map getOlder $ fromMaybe ts $ fmap (\i -> deleteByIndex i ts) ate)
-
-getExtraTreats :: GameAux -> ([Treat], GameAux)
-getExtraTreats (GameAux wnd@(w,h) rnd) = (treats, newAux)
-    where (treats, newAux) = if (dice == 1) then genTreats crdAux 1 else ([], crdAux)
-          crdAux = GameAux wnd crdRnd
-          (dice, crdRnd) = R.randomR (0, treats_life wnd `div` 2) rnd
 
 getOlder :: Treat -> Maybe Treat
 getOlder (Treat p life) | life == 1 = Nothing
@@ -100,3 +86,16 @@ instance Renderable World where
 data Renderables = forall a. Renderable a => RS a
 instance Renderable Renderables where
     render (RS a) = render a
+
+getLife :: AuxState Int
+getLife  = state (\(GameAux wnd rnd) -> (treats_life wnd, GameAux wnd rnd))
+
+getTreat :: AuxState Treat
+getTreat = getCrd >>= \crd -> getLife >>= \life -> return $ Treat (Point crd '*') life
+
+--toss a coin with a chance to win somehow proportional to window's size
+headsOrTails :: AuxState Bool
+headsOrTails = state (\(GameAux wnd rnd) -> (\(i, rnd') -> (i==1, GameAux wnd rnd')) $ randomR (0, treats_life wnd `div` 2) rnd)
+
+getTreats :: AuxState [Treat]
+getTreats = headsOrTails >>= \win -> if win then sequence [getTreat] else return []
